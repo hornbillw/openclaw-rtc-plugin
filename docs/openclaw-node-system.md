@@ -247,7 +247,111 @@ nodeRegistry.unregister(connId):
 
 ---
 
-## 九、总结
+## 九、动态加载与卸载
+
+Node 是纯 WebSocket 连接，完全动态，**无需重启 Gateway**：
+
+- **连接即注册**：Node 随时可以 `ws.connect()` → 握手 → 自动加入 `NodeRegistry.sessions[]`
+- **断开即卸载**：WebSocket 关闭 → `NodeRegistry.unregister()` → 从 sessions 移除、pending invoke 全部 reject
+- **无需预先声明**：Gateway 没有"Node 配置文件"，不需要预先声明有哪些 Node
+
+```
+Gateway 运行中...
+  t=0   Node-A 连接 → sessions: [A]
+  t=5   Node-B 连接 → sessions: [A, B]
+  t=10  Node-A 断开 → sessions: [B]，A 的 pending invoke 全部 reject
+  t=15  Node-C 连接 → sessions: [B, C]
+```
+
+Plugin/Agent 每次调用 `nodeRegistry.listConnected()` 都是实时查询，自动发现新 Node、感知 Node 下线。
+
+移动端 Node 还有更极端的模式：**按需唤醒** — Node 不在线时 Gateway 通过 APNS 推送唤醒 iOS App，等它重连后再发 invoke。
+
+---
+
+## 十、容器化部署：用 Node 访问 Sandbox
+
+Node 架构天然适合容器化场景。Gateway 运行在一个容器中，多个 sandbox 容器各自运行一个 Node 进程连回 Gateway：
+
+```
+┌─────────────────────────────────────────────────┐
+│  K8s / Docker Compose                           │
+│                                                 │
+│  ┌───────────────┐     ┌───────────────────┐   │
+│  │  Gateway 容器  │◀═WS═│  Node 容器 A      │   │
+│  │  :18789       │     │  (代码执行 sandbox)│   │
+│  │               │     │  caps: ["system"]  │   │
+│  │               │     └───────────────────┘   │
+│  │               │                              │
+│  │               │     ┌───────────────────┐   │
+│  │               │◀═WS═│  Node 容器 B      │   │
+│  │               │     │  (GPU 推理)        │   │
+│  │               │     │  caps: ["gpu"]     │   │
+│  │               │     └───────────────────┘   │
+│  │               │                              │
+│  │               │     ┌───────────────────┐   │
+│  │               │◀═WS═│  Node 容器 C      │   │
+│  │               │     │  (Go RTC Node)     │   │
+│  │               │     │  caps: ["webrtc"]  │   │
+│  └───────────────┘     └───────────────────┘   │
+└─────────────────────────────────────────────────┘
+```
+
+### 实现方式
+
+**1. Sandbox 容器内运行 Node Host：**
+
+```bash
+# 容器启动命令
+openclaw node host \
+  --gateway ws://gateway-service:18789 \
+  --token $GATEWAY_TOKEN
+```
+
+或者用自定义轻量 Node（像 Go RTC Node 那样），只需实现 WS 协议 + Ed25519 认证。
+
+**2. 通过 `caps` 区分不同 Sandbox：**
+
+```
+Sandbox-Python:  caps: ["system", "python"],  commands: ["system.run"]
+Sandbox-Node:    caps: ["system", "nodejs"],   commands: ["system.run"]
+Sandbox-GPU:     caps: ["system", "gpu"],      commands: ["system.run", "inference.run"]
+```
+
+**3. Plugin/Agent 按能力路由：**
+
+```typescript
+// 找 Python sandbox
+const pythonNode = nodeRegistry.listConnected()
+  .find(n => n.caps.includes("python"));
+
+// 在里面执行代码
+await nodeRegistry.invoke({
+  nodeId: pythonNode.nodeId,
+  command: "system.run",
+  params: { command: "python3 script.py" },
+});
+```
+
+### 优势
+
+| 特性 | 说明 |
+|------|------|
+| **安全隔离** | 代码在独立容器执行，Gateway 容器不受影响 |
+| **动态伸缩** | K8s HPA 按需扩缩 sandbox 容器，连上就可用 |
+| **多语言/多环境** | 不同容器装不同运行时，通过 `caps` 区分 |
+| **故障隔离** | 一个 sandbox 挂了不影响其他 Node |
+| **零配置** | Gateway 不需要知道有多少 sandbox，Node 连上自动发现 |
+
+### 注意事项
+
+- **allowlist 限制**：Gateway 默认按平台过滤命令。容器内一般是 Linux，`system.run` 在 allowlist 内，没问题
+- **网络连通性**：sandbox 容器需要能访问 Gateway 的 WS 端口（同 K8s namespace 或 service 暴露）
+- **Ed25519 身份**：每个 sandbox 首次连接会自动生成密钥对并持久化到 `~/.openclaw/identity/`。如果容器是临时的（无持久卷），每次重启会生成新 deviceId，Gateway 侧视为新设备 — 功能不受影响，只是日志里 deviceId 会变
+
+---
+
+## 十一、总结
 
 Node 系统的设计哲学是 **"Gateway 是大脑，Node 是终端"**：
 
