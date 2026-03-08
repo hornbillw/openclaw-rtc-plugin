@@ -1,0 +1,19 @@
+# Go
+rtc-node/rtc-node
+*.exe
+
+# Node
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Env
+.env
+.env.*

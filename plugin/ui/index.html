@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenClaw WebRTC</title>
+  <style>
+:root {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --primary: #0f3460;
+  --accent: #e94560;
+  --text: #eaeaea;
+  --text-dim: #8892b0;
+  --success: #4ecca3;
+  --border: #233554;
+  --radius: 8px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Header */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+header h1 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.status.connected { background: var(--success); color: #1a1a2e; }
+.status.disconnected { background: var(--accent); color: white; }
+.status.connecting { background: var(--primary); color: white; }
+
+/* Main */
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Chat */
+#chat-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.message.user {
+  align-self: flex-end;
+  background: var(--primary);
+  border-bottom-right-radius: 2px;
+}
+
+.message.assistant {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 2px;
+}
+
+.message.system {
+  align-self: center;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 4px 8px;
+  max-width: 100%;
+  text-align: center;
+}
+
+.message .meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* Transcript */
+.transcript {
+  padding: 8px 14px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text-dim);
+  border: 1px dashed var(--border);
+}
+
+.transcript-label {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Input */
+#input-area {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+#chat-form {
+  display: flex;
+  gap: 8px;
+}
+
+#chat-input {
+  flex: 1;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+
+#chat-input:focus {
+  border-color: var(--primary);
+}
+
+#send-btn {
+  padding: 10px 20px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+#send-btn:hover {
+  opacity: 0.9;
+}
+
+/* Call controls */
+#call-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.call-btn, .hangup-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.call-btn {
+  background: var(--success);
+  color: #1a1a2e;
+}
+
+.hangup-btn {
+  background: var(--accent);
+  color: white;
+}
+
+.call-btn:hover, .hangup-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.call-btn:active, .hangup-btn:active {
+  transform: scale(0.95);
+}
+
+#call-status {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* Scrollbar */
+#chat-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+#chat-container::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>OpenClaw Voice</h1>
+      <div id="status" class="status disconnected">Disconnected</div>
+    </header>
+
+    <main>
+      <!-- Chat area -->
+      <div id="chat-container">
+        <div id="messages"></div>
+        <div id="transcript" class="transcript" hidden>
+          <span class="transcript-label">Listening:</span>
+          <span id="transcript-text"></span>
+        </div>
+      </div>
+
+      <!-- Input area -->
+      <div id="input-area">
+        <form id="chat-form">
+          <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off">
+          <button type="submit" id="send-btn">Send</button>
+        </form>
+      </div>
+
+      <!-- Call controls -->
+      <div id="call-controls">
+        <button id="call-btn" class="call-btn" title="Start voice call">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 00-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
+          </svg>
+        </button>
+        <button id="hangup-btn" class="hangup-btn" hidden title="End call">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.956.956 0 01-.29-.7c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.27 11.27 0 00-2.67-1.85.996.996 0 01-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
+          </svg>
+        </button>
+        <div id="call-status" hidden></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+// =========================================================================
+// RtcPeer — Browser-side RTCPeerConnection manager
+// =========================================================================
+
+class RtcPeer {
+  #pc = null;
+  #localStream = null;
+  #callbacks;
+
+  constructor(callbacks) {
+    this.#callbacks = callbacks;
+  }
+
+  async createOffer(iceServers) {
+    this.#localStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: 48000,
+      },
+      video: false,
+    });
+
+    this.#pc = new RTCPeerConnection({
+      iceServers: iceServers ?? [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+
+    for (const track of this.#localStream.getAudioTracks()) {
+      this.#pc.addTrack(track, this.#localStream);
+    }
+
+    this.#pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.#callbacks.onIceCandidate(event.candidate.toJSON());
+      }
+    };
+
+    this.#pc.ontrack = (event) => {
+      this.#callbacks.onTrack(event);
+    };
+
+    this.#pc.onconnectionstatechange = () => {
+      if (this.#pc) {
+        this.#callbacks.onConnectionStateChange(this.#pc.connectionState);
+      }
+    };
+
+    const offer = await this.#pc.createOffer();
+    await this.#pc.setLocalDescription(offer);
+    return offer.sdp;
+  }
+
+  async handleAnswer(sdp) {
+    if (!this.#pc) throw new Error("No PeerConnection");
+    await this.#pc.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp }));
+  }
+
+  async addIceCandidate(candidate) {
+    if (!this.#pc) throw new Error("No PeerConnection");
+    await this.#pc.addIceCandidate(new RTCIceCandidate(candidate));
+  }
+
+  hangup() {
+    if (this.#localStream) {
+      for (const track of this.#localStream.getTracks()) track.stop();
+      this.#localStream = null;
+    }
+    if (this.#pc) {
+      this.#pc.close();
+      this.#pc = null;
+    }
+  }
+
+  get connectionState() {
+    return this.#pc?.connectionState ?? null;
+  }
+}
+
+// =========================================================================
+// App — main application logic
+// =========================================================================
+
+const statusEl = document.getElementById("status");
+const messagesEl = document.getElementById("messages");
+const chatForm = document.getElementById("chat-form");
+const chatInput = document.getElementById("chat-input");
+const callBtn = document.getElementById("call-btn");
+const hangupBtn = document.getElementById("hangup-btn");
+const callStatusEl = document.getElementById("call-status");
+const transcriptEl = document.getElementById("transcript");
+const transcriptTextEl = document.getElementById("transcript-text");
+
+// State
+let ws = null;
+let rtcPeer = null;
+let currentCallId = null;
+const pendingRequests = new Map();
+let messageSeq = 0;
+
+// Read token from URL hash: #token=xxx
+function getToken() {
+  const hash = location.hash.slice(1);
+  const params = new URLSearchParams(hash);
+  return params.get("token") || "";
+}
+
+function getGatewayWsUrl() {
+  // Allow overriding gateway host via hash: #gateway=host:port&token=xxx
+  const hash = location.hash.slice(1);
+  const params = new URLSearchParams(hash);
+  const gateway = params.get("gateway");
+  if (gateway) {
+    const proto = gateway.startsWith("wss://") || gateway.startsWith("ws://")
+      ? "" : (location.protocol === "https:" ? "wss://" : "ws://");
+    return `${proto}${gateway}`;
+  }
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}`;
+}
+
+// -------------------------------------------------------------------------
+// Gateway WebSocket
+// -------------------------------------------------------------------------
+
+function connectGateway() {
+  setStatus("connecting");
+  ws = new WebSocket(getGatewayWsUrl());
+
+  ws.onopen = () => setStatus("connected");
+
+  ws.onmessage = (evt) => {
+    try {
+      handleFrame(JSON.parse(evt.data));
+    } catch (err) {
+      console.error("Failed to parse frame:", err);
+    }
+  };
+
+  ws.onclose = () => {
+    setStatus("disconnected");
+    ws = null;
+    setTimeout(connectGateway, 3000);
+  };
+
+  ws.onerror = (err) => console.error("WebSocket error:", err);
+}
+
+function handleFrame(frame) {
+  console.log("[webrtc-ui] frame:", frame.type, frame.event || frame.method || "", JSON.stringify(frame).slice(0, 500));
+  if (frame.type === "event") handleEvent(frame);
+  else if (frame.type === "res") handleResponse(frame);
+}
+
+function handleEvent(frame) {
+  switch (frame.event) {
+    case "connect.challenge": {
+      const nonce = frame.payload?.nonce;
+      if (nonce) sendConnect(nonce);
+      break;
+    }
+    case "chat": {
+      const p = frame.payload;
+      if (p?.state === "delta" && p.message?.content) {
+        const text = p.message.content
+          .filter((c) => c.type === "text")
+          .map((c) => c.text)
+          .join("");
+        if (text) appendAssistantDelta(text);
+      } else if (p?.state === "final") {
+        if (p.message?.content) {
+          const text = p.message.content
+            .filter((c) => c.type === "text")
+            .map((c) => c.text)
+            .join("");
+          if (text) appendAssistantDelta(text);
+        }
+        finalizeAssistantMessage();
+      } else if (p?.state === "error") {
+        appendSystemMessage("Error: " + (p.errorMessage || "unknown error"));
+        finalizeAssistantMessage();
+      }
+      break;
+    }
+    case "rtc.transcript": {
+      const p = frame.payload;
+      if (p?.text) showTranscript(p.text, p.isInterim ?? true);
+      break;
+    }
+    case "rtc.call.ended":
+      handleCallEnded();
+      break;
+  }
+}
+
+function handleResponse(frame) {
+  const pending = pendingRequests.get(frame.id);
+  if (!pending) return;
+  pendingRequests.delete(frame.id);
+  if (frame.ok) {
+    pending.resolve(frame.payload);
+  } else {
+    console.error("[webrtc-ui] request failed:", JSON.stringify(frame));
+    const msg = frame.error?.message ?? frame.payload?.error ?? "Request failed";
+    pending.reject(new Error(msg));
+  }
+}
+
+function sendConnect(nonce) {
+  const token = getToken();
+  sendRequest("connect", {
+    minProtocol: 3,
+    maxProtocol: 3,
+    client: {
+      id: "webchat-ui",
+      displayName: "WebRTC UI",
+      version: "2026.3.8",
+      platform: navigator.platform || "browser",
+      mode: "webchat",
+    },
+    role: "operator",
+    scopes: ["operator.admin"],
+    auth: token ? { token } : undefined,
+  }).then((result) => {
+    if (result?.type === "hello-ok") {
+      setStatus("connected");
+      appendSystemMessage("Connected to OpenClaw Gateway");
+    }
+  }).catch((err) => {
+    console.error("Connect failed:", err);
+    setStatus("disconnected");
+    appendSystemMessage("Connection failed: " + err.message);
+  });
+}
+
+function sendRequest(method, params) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    return Promise.reject(new Error("Not connected"));
+  }
+  const id = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    pendingRequests.set(id, { resolve, reject });
+    ws.send(JSON.stringify({ type: "req", id, method, params }));
+  });
+}
+
+// -------------------------------------------------------------------------
+// Chat
+// -------------------------------------------------------------------------
+
+chatForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = chatInput.value.trim();
+  if (!text) return;
+
+  appendMessage("user", text);
+  chatInput.value = "";
+
+  try {
+    await sendRequest("chat.send", {
+      sessionKey: "main",
+      message: text,
+      idempotencyKey: crypto.randomUUID(),
+    });
+  } catch (err) {
+    appendMessage("system", "Error: " + err.message);
+  }
+});
+
+let currentAssistantEl = null;
+
+function appendMessage(role, text) {
+  const div = document.createElement("div");
+  div.className = `message ${role}`;
+  div.textContent = text;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function appendSystemMessage(text) {
+  appendMessage("system", text);
+}
+
+function appendAssistantDelta(text) {
+  if (!currentAssistantEl) {
+    currentAssistantEl = document.createElement("div");
+    currentAssistantEl.className = "message assistant";
+    messagesEl.appendChild(currentAssistantEl);
+  }
+  // Delta text is cumulative (full text so far), so replace rather than append
+  currentAssistantEl.textContent = text;
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function finalizeAssistantMessage() {
+  currentAssistantEl = null;
+}
+
+// -------------------------------------------------------------------------
+// Voice call
+// -------------------------------------------------------------------------
+
+callBtn.addEventListener("click", startCall);
+hangupBtn.addEventListener("click", hangup);
+
+async function startCall() {
+  if (rtcPeer) return;
+
+  setCallStatus("Requesting microphone...");
+  callBtn.hidden = true;
+  hangupBtn.hidden = false;
+
+  rtcPeer = new RtcPeer({
+    onIceCandidate: (candidate) => {
+      if (currentCallId) {
+        sendRequest("rtc.call.ice", { callId: currentCallId, candidate }).catch(console.error);
+      }
+    },
+    onTrack: (event) => {
+      console.log("[webrtc-ui] ontrack:", event.track?.kind, "streams:", event.streams?.length);
+      const audio = new Audio();
+      if (event.streams && event.streams[0]) {
+        audio.srcObject = event.streams[0];
+      } else {
+        // No stream associated — create one from the track
+        const stream = new MediaStream([event.track]);
+        audio.srcObject = stream;
+      }
+      audio.play().catch(console.error);
+    },
+    onConnectionStateChange: (state) => {
+      console.log("[webrtc-ui] connection state:", state);
+      if (state === "connected") {
+        setCallStatus("In call");
+      } else if (state === "failed") {
+        handleCallEnded();
+      }
+      // Note: "disconnected" is transient — ICE may reconnect, don't hang up
+    },
+  });
+
+  try {
+    setCallStatus("Creating offer...");
+    const offerSdp = await rtcPeer.createOffer();
+
+    setCallStatus("Dialing...");
+    const result = await sendRequest("rtc.call.start", {
+      sdp: offerSdp,
+      sessionKey: "webrtc-" + crypto.randomUUID().slice(0, 8),
+    });
+
+    currentCallId = result.callId;
+    await rtcPeer.handleAnswer(result.answerSdp);
+
+    for (const candidate of (result.candidates || [])) {
+      await rtcPeer.addIceCandidate(candidate);
+    }
+
+    setCallStatus("Connecting...");
+  } catch (err) {
+    console.error("[webrtc-ui] call failed:", err);
+    setCallStatus("Failed: " + err.message);
+    cleanupCall();
+  }
+}
+
+function hangup() {
+  if (currentCallId) {
+    sendRequest("rtc.call.hangup", { callId: currentCallId, reason: "user" }).catch(console.error);
+  }
+  cleanupCall();
+  setCallStatus("Call ended");
+}
+
+function handleCallEnded() {
+  cleanupCall();
+  setCallStatus("Call ended");
+}
+
+function cleanupCall() {
+  if (rtcPeer) {
+    rtcPeer.hangup();
+    rtcPeer = null;
+  }
+  currentCallId = null;
+  callBtn.hidden = false;
+  hangupBtn.hidden = true;
+  transcriptEl.hidden = true;
+}
+
+// -------------------------------------------------------------------------
+// Transcript
+// -------------------------------------------------------------------------
+
+function showTranscript(text, isInterim) {
+  transcriptEl.hidden = false;
+  transcriptTextEl.textContent = text;
+  if (!isInterim) {
+    appendMessage("user", text);
+    transcriptEl.hidden = true;
+  }
+}
+
+// -------------------------------------------------------------------------
+// Status helpers
+// -------------------------------------------------------------------------
+
+function setStatus(state) {
+  statusEl.className = `status ${state}`;
+  statusEl.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+}
+
+function setCallStatus(text) {
+  callStatusEl.hidden = false;
+  callStatusEl.textContent = text;
+  if (text === "Call ended") {
+    setTimeout(() => { callStatusEl.hidden = true; }, 3000);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Init
+// -------------------------------------------------------------------------
+
+if (!getToken()) {
+  appendSystemMessage("No token found. Add #token=YOUR_TOKEN to the URL.");
+}
+
+connectGateway();
+  </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "@openclaw/webrtc",
+  "version": "2026.3.8",
+  "description": "OpenClaw WebRTC voice communication plugin",
+  "type": "module",
+  "dependencies": {
+    "werift": "^0.22.9",
+    "ws": "^8.19.0",
+    "zod": "^4.3.6"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

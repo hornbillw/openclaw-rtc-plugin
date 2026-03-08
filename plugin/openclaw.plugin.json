@@ -1,0 +1,90 @@
+{
+  "id": "webrtc",
+  "uiHints": {
+    "enabled": {
+      "label": "Enable WebRTC"
+    },
+    "iceServers": {
+      "label": "ICE Servers",
+      "help": "JSON array of RTCIceServer objects. Defaults to Google STUN.",
+      "advanced": true
+    },
+    "volcAppId": {
+      "label": "Volcano Engine App ID",
+      "sensitive": true
+    },
+    "volcAccessKey": {
+      "label": "Volcano Engine Access Key",
+      "sensitive": true
+    },
+    "volcResourceId": {
+      "label": "Volcano Engine Resource ID",
+      "advanced": true
+    },
+    "volcSpeaker": {
+      "label": "Volcano Engine TTS Speaker",
+      "advanced": true
+    },
+    "maxConcurrentCalls": {
+      "label": "Max Concurrent Calls",
+      "advanced": true
+    },
+    "maxCallDurationSec": {
+      "label": "Max Call Duration (sec)",
+      "advanced": true
+    },
+    "silenceTimeoutSec": {
+      "label": "Silence Timeout (sec)",
+      "advanced": true
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "iceServers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "urls": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" } }
+              ]
+            },
+            "username": { "type": "string" },
+            "credential": { "type": "string" }
+          }
+        }
+      },
+      "volcAppId": {
+        "type": "string"
+      },
+      "volcAccessKey": {
+        "type": "string"
+      },
+      "volcResourceId": {
+        "type": "string"
+      },
+      "volcSpeaker": {
+        "type": "string"
+      },
+      "maxConcurrentCalls": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "maxCallDurationSec": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "silenceTimeoutSec": {
+        "type": "integer",
+        "minimum": 1
+      }
+    }
+  }
+}
